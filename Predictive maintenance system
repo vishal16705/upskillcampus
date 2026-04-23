@@ -1,0 +1,114 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include "DHT.h"
+
+// ===================== LCD =====================
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// ===================== DHT =====================
+#define DHTPIN 4
+#define DHTTYPE DHT11
+DHT dht(DHTPIN, DHTTYPE);
+
+// ===================== Pins =====================
+#define VIBRATION_PIN 14
+#define RELAY_PIN 5
+#define BUZZER_PIN 18
+
+// ===================== Threshold =====================
+float tempThreshold = 35.0;
+
+// ===================== Variables =====================
+int vibrationState = 0;
+float temperature = 0;
+
+// ===================== Setup =====================
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(VIBRATION_PIN, INPUT);
+  pinMode(RELAY_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+
+  // Relay OFF = LOW (adjust if needed)
+  digitalWrite(RELAY_PIN, HIGH); // Machine ON
+  digitalWrite(BUZZER_PIN, LOW);
+
+  lcd.init();
+  lcd.backlight();
+
+  dht.begin();
+
+  lcd.setCursor(0, 0);
+  lcd.print("System Starting");
+  lcd.setCursor(0, 1);
+  lcd.print("Please Wait...");
+  delay(2000);
+  lcd.clear();
+}
+
+// ===================== Loop =====================
+void loop() {
+
+  // ===== Vibration (Debounce) =====
+  vibrationState = LOW;
+  if (digitalRead(VIBRATION_PIN) == HIGH) {
+    delay(50);
+    if (digitalRead(VIBRATION_PIN) == HIGH) {
+      vibrationState = HIGH;
+    }
+  }
+
+  // ===== Temperature =====
+  temperature = dht.readTemperature();
+
+  if (isnan(temperature)) {
+    Serial.println("DHT Sensor Error!");
+    return;
+  }
+
+  // ===== Fault Detection =====
+  bool faultDetected = false;
+
+  if (vibrationState == HIGH) {
+    faultDetected = true;
+    Serial.println(" Vibration Detected!");
+  }
+
+  if (temperature > tempThreshold) {
+    faultDetected = true;
+    Serial.println(" High Temperature!");
+  }
+
+  // ===== Control System =====
+  if (faultDetected) {
+    digitalWrite(RELAY_PIN, LOW);   // Shutdown
+    digitalWrite(BUZZER_PIN, HIGH); // Alarm ON
+  } else {
+    digitalWrite(RELAY_PIN, HIGH);  // Machine ON
+    digitalWrite(BUZZER_PIN, LOW);  // Alarm OFF
+  }
+
+  // ===== LCD Display =====
+  lcd.setCursor(0, 0);
+  lcd.print("T:");
+  lcd.print(temperature, 1);
+  lcd.print("C   "); // spacing clean
+
+  lcd.setCursor(0, 1);
+  if (faultDetected) {
+    lcd.print("ALERT! SHUTDOWN ");
+  } else {
+    lcd.print("System Normal   ");
+  }
+
+  // ===== Serial Monitor =====
+  Serial.print("Temp: ");
+  Serial.print(temperature);
+  Serial.print(" C | Vib: ");
+  Serial.println(vibrationState);
+
+  Serial.println("----------------------");
+
+  delay(1000);
+}
